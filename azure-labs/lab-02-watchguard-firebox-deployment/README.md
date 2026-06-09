@@ -1,4 +1,4 @@
-# Lab 02 — WatchGuard Firebox Cloud Deployment on Azure
+# Lab 02 — WatchGuard Firebox Cloud: Full Network Lab Deployment on Azure
 
 **Repo:** homelab-and-scripts
 **Date Completed:** June 2026
@@ -6,9 +6,9 @@
 
 ## Lab Overview
 
-Deployed a full WatchGuard Firebox Cloud lab environment on Azure including a virtual firewall, Linux client VM, and Windows Server client VM. All resources were deployed and managed using a combination of Azure Portal, Azure CLI (Bash), and Azure PowerShell — deliberately using all three methods to build familiarity with each toolset.
+Deployed a complete enterprise-style firewall lab on Azure using WatchGuard Firebox Cloud. Built a proper network topology with WAN/LAN separation, deployed client VMs, configured firewall policies, SNAT port forwarding, and User Defined Routes (UDRs) to force all LAN traffic through the firewall. All resources were deployed and managed using Azure Portal, Azure CLI (Bash), and Azure PowerShell.
 
-This lab was built to support WatchGuard certification (PCNSE) study and hands-on Azure networking practice simultaneously. The environment mirrors a real production deployment: a firewall sitting between the internet and an internal network, with client machines behind it that should have their traffic inspected and controlled by the Firebox.
+This lab simultaneously supports WatchGuard PCNSE certification study and hands-on Azure networking skill development — covering VNets, NSGs, route tables, virtual appliances, public IPs, and multi-tool deployment.
 
 ---
 
@@ -18,43 +18,47 @@ This lab was built to support WatchGuard certification (PCNSE) study and hands-o
 Internet
     │
     ▼
-Public IP (Dynamic — Standard SKU)
+<PUBLIC-IP> (Azure Standard Static Public IP)
 DNS: wg-firebox-lab.canadacentral.cloudapp.azure.com
     │
     ▼
-┌─────────────────────────────────────────────────────────┐
-│  vnet-watchguard-lab  (10.10.0.0/16)                    │
-│  Resource Group: rg-watchguard-lab  │  Canada Central   │
-│                                                         │
-│  ┌──────────────────────────────────────────────────┐   │
-│  │  subnet-wan  (10.10.1.0/24)                      │   │
-│  │  WAN / External Interface                        │   │
-│  │  Route Table: vmwgfirebox-subnet-wan-routes      │   │
-│  │                                                  │   │
-│  │  ┌────────────────────────────────────────────┐  │   │
-│  │  │  vmwgfirebox                               │  │   │
-│  │  │  WatchGuard Firebox Cloud PAYG             │  │   │
-│  │  │  Standard_D2s_v3                           │  │   │
-│  │  │  NSG: NSG-vmwgfireboxEth0Management        │  │   │
-│  │  │  (Port 8080 inbound — Management UI)       │  │   │
-│  │  └────────────────────────────────────────────┘  │   │
-│  └──────────────────────────────────────────────────┘   │
-│                         │                               │
-│  ┌──────────────────────▼───────────────────────────┐   │
-│  │  subnet-lan  (10.10.2.0/24)                      │   │
-│  │  LAN / Internal Interface                        │   │
-│  │  Route Table: vmwgfirebox-subnet-lan-routes      │   │
-│  │                                                  │   │
-│  │  ┌──────────────────────┐  ┌──────────────────┐  │   │
-│  │  │  vm-linux-client     │  │  vm-win-client   │  │   │
-│  │  │  Ubuntu 22.04 LTS    │  │  WS 2022 DC Core │  │   │
-│  │  │  Standard_D2s_v3     │  │  Standard_D2s_v3 │  │   │
-│  │  │  No public IP        │  │  No public IP    │  │   │
-│  │  └──────────────────────┘  └──────────────────┘  │   │
-│  └──────────────────────────────────────────────────┘   │
-│                                                         │
-│  Storage Account: stwgfireboxlab (Standard LRS)         │
-└─────────────────────────────────────────────────────────┘
+Azure NSG: NSG-vmwgfireboxEth0Management
+(Inbound: port 22 Allow, port 8080 Allow)
+    │
+    ▼
+┌─────────────────────────────────────────────────────────────┐
+│  vnet-watchguard-lab  (10.10.0.0/16)                        │
+│  rg-watchguard-lab  │  Canada Central                       │
+│                                                             │
+│  ┌────────────────────────────────────────────────────┐     │
+│  │  subnet-wan  (10.10.1.0/24)                        │     │
+│  │  Route Table: vmwgfirebox-subnet-wan-routes        │     │
+│  │                                                    │     │
+│  │  ┌──────────────────────────────────────────────┐  │     │
+│  │  │  vmwgfirebox                                 │  │     │
+│  │  │  WatchGuard Firebox Cloud PAYG               │  │     │
+│  │  │  Standard_D2s_v3                             │  │     │
+│  │  │  Eth0 (WAN) — subnet-wan                     │  │     │
+│  │  │  Eth1 (LAN) — subnet-lan  <FIREBOX-LAN-IP>   │  │     │
+│  │  └──────────────────────────────────────────────┘  │     │
+│  └────────────────────────────────────────────────────┘     │
+│                           │                                 │
+│  ┌────────────────────────▼───────────────────────────┐     │
+│  │  subnet-lan  (10.10.2.0/24)                        │     │
+│  │  Route Table: rt-subnet-lan                        │     │
+│  │  UDR: 0.0.0.0/0 → VirtualAppliance <FIREBOX-LAN-IP>│     │
+│  │                                                    │     │
+│  │  ┌──────────────────────┐  ┌──────────────────┐   │     │
+│  │  │  vm-linux-client     │  │  vm-win-client   │   │     │
+│  │  │  Ubuntu 22.04 LTS    │  │  WS 2022 DC Core │   │     │
+│  │  │  Standard_D2s_v3     │  │  Standard_D2s_v3 │   │     │
+│  │  │  10.10.2.4           │  │  (deallocated)   │   │     │
+│  │  │  No public IP        │  │  No public IP    │   │     │
+│  │  └──────────────────────┘  └──────────────────┘   │     │
+│  └────────────────────────────────────────────────────┘     │
+│                                                             │
+│  Storage Account: stwgfireboxlab (Standard LRS)             │
+└─────────────────────────────────────────────────────────────┘
 ```
 
 ---
@@ -63,89 +67,203 @@ DNS: wg-firebox-lab.canadacentral.cloudapp.azure.com
 
 ### Resource Groups
 
-| Name | Purpose |
+| Name | Contents |
 |---|---|
-| `rg-watchguard-lab` | VNet, subnets, storage account |
-| `rg-wg-firebox` | All VMs, NICs, NSGs, route tables, public IPs |
+| `rg-watchguard-lab` | VNet, subnets, storage account, route tables |
+| `rg-wg-firebox` | All VMs, NICs, NSGs, disks, public IP |
 
 ### Networking
 
 | Resource | Name | Details |
 |---|---|---|
-| Virtual Network | `vnet-watchguard-lab` | Address space: 10.10.0.0/16 |
-| Subnet | `subnet-wan` | 10.10.1.0/24 — WAN/external interface |
-| Subnet | `subnet-lan` | 10.10.2.0/24 — LAN/internal interface |
-| NSG | `NSG-vmwgfireboxEth0Management` | Inbound rule: port 8080 — Firebox management UI |
-| Route Table | `vmwgfirebox-subnet-wan-routes` | Attached to subnet-wan |
-| Route Table | `vmwgfirebox-subnet-lan-routes` | Attached to subnet-lan |
+| Virtual Network | `vnet-watchguard-lab` | 10.10.0.0/16 |
+| Subnet | `subnet-wan` | 10.10.1.0/24 — Firebox WAN/external |
+| Subnet | `subnet-lan` | 10.10.2.0/24 — Firebox LAN/internal |
+| NSG | `NSG-vmwgfireboxEth0Management` | Inbound: port 8080 (Web UI), port 22 (SSH) |
+| Route Table | `vmwgfirebox-subnet-wan-routes` | Attached to subnet-wan (Firebox-managed) |
+| Route Table | `rt-subnet-lan` | UDR: 0.0.0.0/0 → VirtualAppliance `<FIREBOX-LAN-IP>` |
+| Public IP | `pip-wg-firebox` | Standard SKU, Static, DNS: wg-firebox-lab |
+| Storage Account | `stwgfireboxlab` | Standard LRS — pre-created for Marketplace deploy |
 
 ### Virtual Machines
 
-| Resource | Name | Details |
-|---|---|---|
-| Firewall VM | `vmwgfirebox` | WatchGuard Firebox Cloud PAYG, Standard_D2s_v3 |
-| Linux Client | `vm-linux-client` | Ubuntu 22.04 LTS, Standard_D2s_v3, no public IP |
-| Windows Client | `vm-win-client` | Windows Server 2022 Datacenter Core, Standard_D2s_v3, no public IP |
+| Resource | Name | OS | Size | IP |
+|---|---|---|---|---|
+| Firewall | `vmwgfirebox` | WatchGuard Firebox Cloud PAYG | Standard_D2s_v3 | WAN: `<PUBLIC-IP>` / LAN: `<FIREBOX-LAN-IP>` |
+| Linux Client | `vm-linux-client` | Ubuntu 22.04 LTS | Standard_D2s_v3 | 10.10.2.4 (private only) |
+| Windows Client | `vm-win-client` | Windows Server 2022 Datacenter Core | Standard_D2s_v3 | Private only (deallocated when not in use) |
 
-### Other
+---
 
-| Resource | Name | Details |
+## WatchGuard Configuration
+
+### Firewall Policies
+
+| Policy Name | Direction | Source | Destination | Port/Protocol | Purpose |
+|---|---|---|---|---|---|
+| `WG-Fireware-XTM-WebUI` | Inbound | Any | Firebox | 8080 TCP | Web UI management access |
+| `Ping` | Any | Any | Any | ICMP | ICMP/ping (default) |
+| `WG-Firebox-Mgmt` | Inbound | Any | Firebox | 4105, 4117, 4118 TCP | Firebox management ports |
+| `LAN-to-WAN` | Outbound | Any-Trusted | Any-External | Any | Allow LAN clients to reach internet |
+| `SSH-to-Linux` | Inbound | Any-External | SNAT: Linux-Client | 22 TCP | Port-forward SSH to Linux VM |
+
+### SNAT — Static NAT (Port Forwarding)
+
+| Field | Value |
+|---|---|
+| Name | `SNAT Linux-Client` |
+| Type | Static NAT |
+| External IP | Firebox WAN IP (`<PUBLIC-IP>`) |
+| Internal Target | Linux VM private IP (`10.10.2.4`) |
+| Port | 22 (SSH) |
+| Used By Policy | `SSH-to-Linux` |
+
+SNAT intercepts inbound SSH connections arriving at the Firebox WAN IP on port 22 and translates the destination to the Linux VM's private IP. Combined with the UDR, return traffic is forced back through the Firebox rather than dropping directly.
+
+### Alias
+
+| Name | Type | Value |
 |---|---|---|
-| Public IP | Dynamic (Standard SKU) | DNS: wg-firebox-lab.canadacentral.cloudapp.azure.com |
-| Storage Account | `stwgfireboxlab` | Standard LRS — pre-created for Firebox Marketplace deployment |
+| `Linux-Client` | Host IPv4 | 10.10.2.4 |
 
 ---
 
 ## Key Commands Used
 
-### Azure CLI — Deploy Linux VM
+### Session Startup — Create and Attach Public IP
+
+```bash
+# Create Standard Static public IP
+az network public-ip create \
+  --resource-group rg-wg-firebox \
+  --name pip-wg-firebox \
+  --sku Standard \
+  --allocation-method Static \
+  --dns-name wg-firebox-lab \
+  --location canadacentral
+
+# Attach to Firebox WAN NIC
+az network nic ip-config update \
+  --resource-group rg-wg-firebox \
+  --nic-name vmwgfireboxEth0-NSG \
+  --name ipconfig1 \
+  --public-ip-address pip-wg-firebox
+
+# Start VMs
+az vm start --resource-group rg-wg-firebox --name vmwgfirebox
+az vm start --resource-group rg-wg-firebox --name vm-linux-client
+```
+
+### Deploy Linux VM (Full Subnet Resource ID)
+
+Cross-resource-group VNet references require the full subnet resource ID:
 
 ```bash
 az vm create \
   --resource-group rg-wg-firebox \
   --name vm-linux-client \
   --image Ubuntu2204 \
-  --vnet-name vnet-watchguard-lab \
-  --subnet subnet-lan \
+  --subnet /subscriptions/<SUBSCRIPTION-ID>/resourceGroups/rg-watchguard-lab/providers/Microsoft.Network/virtualNetworks/vnet-watchguard-lab/subnets/subnet-lan \
   --admin-username azureuser \
   --generate-ssh-keys \
-  --size Standard_D2s_v3 \
-  --output table
+  --size Standard_D2s_v3
 ```
 
-### Azure CLI — Remove Public IP from Linux VM
-
-Azure CLI assigns a public IP by default. These commands dissociate it from the NIC, then delete the resource:
+### Add SSH Inbound Rule to NSG
 
 ```bash
-az network nic ip-config update \
+az network nsg rule create \
   --resource-group rg-wg-firebox \
-  --nic-name vm-linux-clientVMNic \
-  --name ipconfigvm-linux-client \
-  --remove publicIpAddress
-
-az network public-ip delete \
-  --resource-group rg-wg-firebox \
-  --name vm-linux-clientPublicIP
+  --nsg-name NSG-vmwgfireboxEth0Management \
+  --name Allow-SSH \
+  --priority 110 \
+  --protocol TCP \
+  --destination-port-ranges 22 \
+  --access Allow \
+  --direction Inbound
 ```
 
-### Azure CLI — Verify Deployed Resources
+### Create User Defined Route Table (UDR)
 
 ```bash
-# List all resources in the VM resource group
+# Create route table
+az network route-table create \
+  --resource-group rg-watchguard-lab \
+  --name rt-subnet-lan \
+  --location canadacentral
+
+# Add default route via Firebox LAN interface (VirtualAppliance)
+az network route-table route create \
+  --resource-group rg-watchguard-lab \
+  --route-table-name rt-subnet-lan \
+  --name default-via-firebox \
+  --address-prefix 0.0.0.0/0 \
+  --next-hop-type VirtualAppliance \
+  --next-hop-ip-address <FIREBOX-LAN-IP>
+
+# Attach route table to subnet-lan
+az network vnet subnet update \
+  --resource-group rg-watchguard-lab \
+  --vnet-name vnet-watchguard-lab \
+  --name subnet-lan \
+  --route-table rt-subnet-lan
+```
+
+### Fix Subnet Address Prefixes (if null)
+
+```bash
+az network vnet subnet update \
+  --resource-group rg-watchguard-lab \
+  --vnet-name vnet-watchguard-lab \
+  --name subnet-lan \
+  --address-prefixes 10.10.2.0/24
+
+az network vnet subnet update \
+  --resource-group rg-watchguard-lab \
+  --vnet-name vnet-watchguard-lab \
+  --name subnet-wan \
+  --address-prefixes 10.10.1.0/24
+```
+
+### Test Port Connectivity
+
+```bash
+nc -zv <PUBLIC-IP> 22      # Test SSH port
+nc -zv <PUBLIC-IP> 8080    # Test Firebox Web UI port
+```
+
+### Verify Resource State
+
+```bash
 az resource list --resource-group rg-wg-firebox --output table
-
-# Check VM power states
 az vm list --resource-group rg-wg-firebox --show-details \
   --query "[].{Name:name, State:powerState}" --output table
-
-# Confirm no public IPs remain attached
 az network public-ip list --resource-group rg-wg-firebox --output table
 ```
 
-### Azure PowerShell — Deploy Windows Server VM
+### Session Shutdown — Deallocate and Delete Public IP
 
-Azure PowerShell does **not** assign a public IP by default — unlike the CLI. No removal step needed.
+```bash
+# Deallocate VMs
+az vm deallocate --resource-group rg-wg-firebox --name vmwgfirebox
+az vm deallocate --resource-group rg-wg-firebox --name vm-linux-client
+
+# Detach public IP from NIC
+az network nic ip-config update \
+  --resource-group rg-wg-firebox \
+  --nic-name vmwgfireboxEth0-NSG \
+  --name ipconfig1 \
+  --remove publicIpAddress
+
+# Delete public IP resource
+az network public-ip delete \
+  --resource-group rg-wg-firebox \
+  --name pip-wg-firebox
+```
+
+### Deploy Windows Server VM (PowerShell)
+
+Azure PowerShell does **not** auto-assign a public IP — unlike the CLI.
 
 ```powershell
 New-AzVM `
@@ -156,142 +274,120 @@ New-AzVM `
   -VirtualNetworkName "vnet-watchguard-lab" `
   -SubnetName "subnet-lan" `
   -Size "Standard_D2s_v3"
-```
 
-### Azure PowerShell — Deallocate Windows VM (Cost Control)
-
-```powershell
+# Deallocate when not in use
 Stop-AzVM `
   -ResourceGroupName "rg-wg-firebox" `
   -Name "vm-win-client" `
   -Force
 ```
 
-### Deployment Scripts
-
-Reusable scripts saved to this repo for future redeployment:
-
-| Script | Location | Purpose |
-|---|---|---|
-| `deploy-linux-vm.sh` | `/azure-labs/lab-02-watchguard-firebox-deployment/` | Bash script — deploy Linux client VM |
-| `deploy-win-vm.ps1` | `/powershell/` | PowerShell script — deploy Windows Server VM |
-
 ---
 
 ## Troubleshooting Encountered
 
-Real issues hit during this lab and how they were resolved:
-
 | # | Problem | Root Cause | Resolution |
 |---|---|---|---|
-| 1 | WatchGuard Marketplace deployment failed | Firebox Cloud requires a **completely empty** resource group | Created separate `rg-wg-firebox` for the Firebox; kept VNet in `rg-watchguard-lab` |
-| 2 | Basic SKU public IP not available | Basic SKU public IPs are being retired; not available in all subscriptions | Switched to **Standard SKU** with Dynamic allocation and DNS label |
-| 3 | B-series and A-series VM sizes unavailable | Canada Central subscription quota does not include B/A series | Used **Standard_D2s_v3** for all VMs (Firebox, Linux client, Windows client) |
-| 4 | Port 8080 blocked after Firebox deployment | Management Only NSG applied by default — port 8080 not included | Manually added inbound NSG rule: port 8080, source My IP |
-| 5 | Linux VM got an unexpected public IP | Azure CLI assigns a public IP to VMs by default | Removed manually post-deployment using `nic ip-config update` + `public-ip delete` |
-| 6 | Storage account creation failed during Marketplace deploy | Marketplace deployment could not create a storage account inline | Pre-created `stwgfireboxlab` in `rg-watchguard-lab` before deployment; referenced it during wizard |
+| 1 | WatchGuard Marketplace deploy failed | Firebox requires a completely empty resource group | Created dedicated `rg-wg-firebox`; kept VNet in `rg-watchguard-lab` |
+| 2 | Basic SKU public IP unavailable | Being retired; not available in all Canada Central subscriptions | Switched to Standard SKU Static IP |
+| 3 | B-series/A-series VM sizes unavailable | Quota not included in this subscription in Canada Central | Used Standard_D2s_v3 for all VMs |
+| 4 | Subnet address prefixes null after VNet creation | UI deployment quirk — prefixes not saved correctly | Fixed via `az network vnet subnet update --address-prefixes` |
+| 5 | Linux VM deployed into wrong VNet | VNet lived in `rg-watchguard-lab`, VM deployed to `rg-wg-firebox` — short name resolution failed | Used full subnet resource ID with `/subscriptions/<SUBSCRIPTION-ID>/...` |
+| 6 | Port 8080 open but port 22 timing out | NSG was missing the Allow-SSH inbound rule | Added rule via `az network nsg rule create` |
+| 7 | SSH policy configured on Firebox but Linux VM still not responding | Asymmetric routing — return packets left subnet-lan directly via Azure default route, bypassing the Firebox | Created UDR on subnet-lan with `0.0.0.0/0 → VirtualAppliance <FIREBOX-LAN-IP>` |
+| 8 | Storage account inline creation failed during Marketplace deploy | Marketplace wizard could not create storage account mid-deployment | Pre-created `stwgfireboxlab` in `rg-watchguard-lab` before starting wizard |
 
 ---
 
 ## Concepts Learned
 
-### VNet Architecture — Address Spaces vs Subnets
+### Asymmetric Routing — The Core Problem This Lab Solved
 
-The VNet address space (10.10.0.0/16) is the outer boundary — like a city. Subnets (10.10.1.0/24, 10.10.2.0/24) are neighbourhoods within that city. Devices in different subnets can communicate via routing, but the separation allows traffic control at each boundary.
+Without a UDR, return traffic from the Linux VM took a shortcut:
 
-Azure reserves 5 IPs per subnet (network, gateway, two DNS, broadcast), so a /24 provides 251 usable addresses.
+```
+Inbound:   Internet → Public IP → NSG → Firebox WAN → SNAT → vm-linux-client ✓
+Return:    vm-linux-client → Azure default route → Internet (BYPASSES Firebox) ✗
+```
 
-### Subnetting — /16 vs /24
+The Firebox drops the return packets because it has no record of the session (it never saw the outbound side). The fix — a UDR forcing all LAN traffic through the Firebox LAN IP — ensures both directions traverse the firewall:
 
-| CIDR | Hosts Available | Typical Use |
-|---|---|---|
-| /16 | 65,534 | VNet address space — wide container |
-| /24 | 251 (Azure) | Individual subnet — one network segment |
-| /30 | 2 | Point-to-point links |
+```
+Return:    vm-linux-client → UDR → Firebox LAN → Firebox WAN → Internet ✓
+```
 
-### SSH Key Pairs
+### User Defined Routes (UDR) and VirtualAppliance Next Hop
 
-`--generate-ssh-keys` creates an RSA key pair:
-- **Private key** — stored locally at `~/.ssh/id_rsa` on the machine running the CLI command. Never shared.
-- **Public key** — placed in `~/.ssh/authorized_keys` on the VM. Can be shared freely.
+Azure's system routes send subnet traffic directly to the internet by default. UDRs override this. The `VirtualAppliance` next hop type tells Azure to forward packets to a specific IP (the Firebox LAN interface) rather than following the default path. This is the standard mechanism for inserting any NVA (Network Virtual Appliance) — firewall, load balancer, IDS — into the traffic path.
 
-Authentication: the VM challenges with a value encrypted using the public key. Only the holder of the private key can decrypt it and prove identity. No password to brute-force or leak.
+### Double NAT
 
-### Public IPs — Static vs Dynamic, SKU Differences
+Traffic from the Linux VM reaching the internet passes through two NAT operations:
+1. **Azure NAT** — Azure translates the VM's private IP to the public IP at the platform level
+2. **Firebox SNAT** — WatchGuard performs its own outbound NAT via the LAN-to-WAN policy
 
-| | Basic SKU | Standard SKU |
-|---|---|---|
-| Allocation | Static or Dynamic | Static or Dynamic |
-| Zone redundancy | No | Yes |
-| Availability | Being retired | Current standard |
-| Security | Open by default | Closed by default (NSG required) |
+Both must be correctly configured for end-to-end connectivity.
 
-Dynamic IPs release on VM deallocation. The DNS label (`wg-firebox-lab.canadacentral.cloudapp.azure.com`) provides a stable hostname even as the underlying IP changes.
+### SNAT vs DNAT (WatchGuard Context)
 
-### NSGs — Inbound/Outbound Rules
+- **SNAT (Static NAT)** — used here for port forwarding inbound connections (WAN IP:22 → Linux VM:22). WatchGuard calls this "Static NAT" and it is configured as an SNAT action linked to a firewall policy.
+- **Dynamic NAT** — used for outbound connections (many private IPs → one public IP). Applied automatically by the LAN-to-WAN policy.
 
-NSGs are stateful packet filters. Key properties:
-- Rules are evaluated by **priority** — lower number = higher priority
-- Default rules allow VNet-internal traffic and block everything else inbound from internet
-- The Management Only NSG on the Firebox restricts inbound to port 8080 — all other ports blocked until explicitly opened
+### NSG Rule Priority
 
-### Route Tables
+NSG rules are evaluated lowest number first. Priority 110 for the SSH rule means it is evaluated before the default deny rules (priority 65000+). Rules do not "fall through" — the first matching rule wins.
 
-Azure creates system routes by default (VNet-to-VNet, internet). User Defined Routes (UDRs) override these — for example, forcing all LAN subnet traffic through the Firebox's internal NIC instead of routing directly to the internet. This is what makes the Firebox an actual gateway rather than just another VM on the network.
-
-*Route table configuration is the next step in this lab.*
-
-### Azure CLI vs Azure PowerShell — Behaviour Differences
+### Azure CLI vs Azure PowerShell — Default Behaviour
 
 | Behaviour | Azure CLI | Azure PowerShell |
 |---|---|---|
-| Public IP on VM create | **Assigned by default** — must remove manually if not wanted | **Not assigned by default** |
-| Output format | `--output table/json/tsv` | Object-based — pipe to `Format-Table` |
-| Script style | Bash — good for Linux/Mac environments | PowerShell — good for Windows and cross-platform |
-| Best for | Quick commands, CI/CD pipelines | Complex automation, enterprise scripting |
+| Public IP on VM create | **Yes — assigned by default** | No — not assigned by default |
+| Cross-RG VNet reference | Requires full resource ID | Accepts VNet name directly |
+| Output | `--output table/json/tsv` | Object-based, pipe to `Format-Table` |
 
-### Git Workflow Practiced
+### WatchGuard Traffic Monitor
 
-```bash
-# Write the script file
-vim deploy-linux-vm.sh
+Real-time packet log inside the Firebox Web UI. Essential for verifying whether traffic is hitting the firewall, which policy is matching it, and whether the SNAT action is applying. Used extensively during troubleshooting to confirm packets were arriving but return traffic was being dropped.
 
-# Stage changes
-git add deploy-linux-vm.sh
+### netcat (nc) for Port Testing
 
-# Commit with meaningful message
-git commit -m "Add deploy-linux-vm.sh — Azure CLI script for vm-linux-client deployment"
+`nc -zv <HOST> <PORT>` tests TCP connectivity without initiating a full application handshake. Much faster than waiting for an SSH timeout to confirm a port is closed.
 
-# Push to GitHub
-git push
-```
+---
+
+## Security Notes
+
+| Item | Current State | Production Recommendation |
+|---|---|---|
+| SSH (port 22) | Open to any source | Restrict to known IPs only; close when not in use |
+| Firebox Web UI (port 8080) | Open to any source | Restrict to known IPs only |
+| SSH authentication | Key-based only (password disabled) | Keep key-based; rotate keys periodically |
+| Public IP | Deleted after every session | Use Just-In-Time access or VPN for production |
+| Windows VM | No public IP | Correct — access only via Firebox SNAT or VPN |
+| Linux VM | No public IP | Correct — accessible only via Firebox SNAT rule |
 
 ---
 
 ## Cost Management
 
-Keeping lab costs under control while maximising learning time:
-
 | Practice | Details |
 |---|---|
-| Deallocate VMs after every session | Stopped VMs do not incur compute charges |
-| Delete public IP after each session | Dynamic IPs are free when unattached; Standard SKU IPs have a small charge when attached |
-| Windows VM — delete when not in use | Redeploy via `deploy-win-vm.ps1` script rather than leaving it allocated |
-| Budget alert | $50 CAD set at subscription level — email notification at 80% actual and forecasted |
+| Deallocate VMs after every session | No compute charges while deallocated |
+| Delete public IP after every session | Standard SKU static IPs charge ~$4–7 CAD/month even when unattached |
+| Windows VM — delete when not in use | Redeploy via `deploy-win-vm.ps1` rather than leaving allocated |
+| Budget alert | $50 CAD on subscription — email at 80% actual and forecasted |
 | VM sizing | Standard_D2s_v3 only — only D_v3 series available in Canada Central for this subscription |
 
 ---
 
 ## Next Steps
 
-- [ ] Configure Route Table on `subnet-lan` — UDR to force all client traffic through Firebox LAN NIC
-- [ ] Complete WatchGuard Firebox initial setup wizard via web UI (port 8080)
-- [ ] Configure outbound firewall policy — allow Linux/Windows clients to reach internet through Firebox
-- [ ] Test end-to-end traffic flow: client VM → Firebox → internet
-- [ ] SSH into `vm-linux-client` from Mac Terminal via Firebox management access
-- [ ] RDP into `vm-win-client` through Firebox
-- [ ] Configure WatchGuard logging — review traffic logs in Firebox System Manager
-- [ ] Practice NAT rules — Dynamic NAT for outbound, Static NAT for inbound services
+- [ ] Restrict port 22 inbound NSG rule to `<YOUR-IP>/32` — close when not testing
+- [ ] Configure RDP port forward (SNAT) for Windows VM access through Firebox
+- [ ] Test traffic between Linux VM and Windows VM through Firebox (inter-LAN policy)
+- [ ] Explore WatchGuard subscription services — IPS, web filtering, APT Blocker
+- [ ] Set up WatchGuard Cloud (Dimension) for centralised logging and visibility
+- [ ] Document Firebox policy export for repeatable lab rebuild
 - [ ] Commit `deploy-linux-vm.sh` and `deploy-win-vm.ps1` scripts to this repo
 
 ---
