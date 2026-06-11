@@ -391,4 +391,199 @@ Real-time packet log inside the Firebox Web UI. Essential for verifying whether 
 - [ ] Commit `deploy-linux-vm.sh` and `deploy-win-vm.ps1` scripts to this repo
 
 ---
+
+## Session 2 — RDP, Windows VM, and Network Validation
+
+### Additional Resources Deployed
+
+| Resource | Details |
+|---|---|
+| `vm-win-client` | Windows Server 2022 Datacenter Core, Standard_D2s_v3 — **deleted after testing** |
+| NSG rule: `Allow-RDP` | Port 3389 inbound on Firebox NSG |
+| SNAT: `SNAT Win-Client` | Forwards RDP from Firebox WAN IP → Windows VM (`<WIN-VM-IP>`) |
+| Alias: `Win-Client` | Host IPv4 pointing to Windows VM private IP |
+
+### Additional WatchGuard Firewall Policies
+
+| Policy Name | Direction | Source | Destination | Port | Purpose |
+|---|---|---|---|---|---|
+| `RDP-to-Windows` | Inbound | Any-External | SNAT Win-Client | 3389 TCP | Port-forward RDP to Windows VM |
+
+---
+
+### Additional Commands Used (Session 2)
+
+**Add RDP inbound rule to Firebox NSG:**
+
+```bash
+az network nsg rule create \
+  --resource-group rg-wg-firebox \
+  --nsg-name NSG-vmwgfireboxEth0Management \
+  --name Allow-RDP \
+  --priority 120 \
+  --protocol TCP \
+  --destination-port-ranges 3389 \
+  --access Allow \
+  --direction Inbound
+```
+
+**Deploy Windows VM with correct subnet placement (PowerShell NIC pre-creation):**
+
+Using the short VNet name fails cross-resource-group. Pre-create the NIC with the full subnet resource ID, then attach it.
+
+```powershell
+$vnet = Get-AzVirtualNetwork `
+  -ResourceGroupName "rg-watchguard-lab" `
+  -Name "vnet-watchguard-lab"
+
+$subnet = Get-AzVirtualNetworkSubnetConfig `
+  -VirtualNetwork $vnet `
+  -Name "subnet-lan"
+
+$nic = New-AzNetworkInterface `
+  -ResourceGroupName "rg-wg-firebox" `
+  -Name "vm-win-clientNic" `
+  -Location "canadacentral" `
+  -SubnetId $subnet.Id
+
+$vm = New-AzVMConfig `
+  -VMName "vm-win-client" `
+  -VMSize "Standard_D2s_v3"
+
+$cred = Get-Credential
+
+$vm = Set-AzVMOperatingSystem `
+  -VM $vm `
+  -Windows `
+  -ComputerName "vm-win-client" `
+  -Credential $cred
+
+$vm = Set-AzVMSourceImage `
+  -VM $vm `
+  -PublisherName "MicrosoftWindowsServer" `
+  -Offer "WindowsServer" `
+  -Skus "2022-datacenter-core" `
+  -Version "latest"
+
+$vm = Add-AzVMNetworkInterface `
+  -VM $vm `
+  -Id $nic.Id
+
+New-AzVM `
+  -ResourceGroupName "rg-wg-firebox" `
+  -Location "canadacentral" `
+  -VM $vm
+```
+
+**Delete Windows VM and all associated resources:**
+
+```bash
+az vm deallocate --resource-group rg-wg-firebox --name vm-win-client
+az vm delete --resource-group rg-wg-firebox --name vm-win-client --yes
+az network nic delete --resource-group rg-wg-firebox --name vm-win-clientNic
+az network nsg delete --resource-group rg-wg-firebox --name vm-win-client
+az disk delete --resource-group rg-wg-firebox --name <WIN-VM-DISK-NAME> --yes
+```
+
+---
+
+### What Was Tested and Verified (Session 2)
+
+| Test | Result |
+|---|---|
+| RDP from Mac → Firebox SNAT → Windows VM (`<WIN-VM-IP>`) | ✅ |
+| SSH from Mac → Firebox SNAT → Linux VM (`<LINUX-VM-IP>`) | ✅ |
+| Windows VM → Linux VM internal ping | ✅ |
+| Linux VM → Windows VM internal ping | ✅ |
+| Outbound internet from both VMs through Firebox | ✅ |
+
+---
+
+### Additional Troubleshooting (Session 2)
+
+| # | Problem | Root Cause | Resolution |
+|---|---|---|---|
+| 1 | Windows VM deployed to wrong subnet (10.0.0.x) | PowerShell `New-AzVM` with short VNet name used wrong VNet | Pre-created NIC using `New-AzNetworkInterface` with full `$subnet.Id`, attached to VM config |
+| 2 | RDP timing out | Firebox missing SNAT rule and firewall policy for port 3389 | Added `SNAT Win-Client` action + `RDP-to-Windows` policy linked to it |
+| 3 | Git merge conflict on local repo | Local and remote branches had diverged | Ran `git config pull.rebase false`, then `git pull`, then `git commit --no-edit` |
+
+---
+
+### Additional Concepts Learned (Session 2)
+
+- **RDP port forwarding through WatchGuard Firebox** — same SNAT + policy pattern as SSH, different port
+- **PowerShell NIC pre-creation** — only reliable method for placing a VM into a cross-resource-group subnet; `New-AzVM` alone cannot resolve the VNet correctly
+- **Git divergent branch resolution** — when local and remote have independent commits, `pull.rebase false` merges them; `--no-edit` accepts the default merge commit message
+- **vim basics** — `Escape` then `:wq` to save and exit; needed when resolving git merge commits in the terminal
+- **Windows App (formerly Microsoft Remote Desktop)** — Mac RDP client for connecting to Windows VMs via Firebox SNAT
+- **Orphaned Azure resource cleanup** — deleting a VM leaves behind NIC, NSG, and disk; each must be deleted separately to avoid charges
+- **WatchGuard Traffic Monitor** — real-time packet log in the Firebox Web UI; used throughout to confirm SNAT matching and policy hits
+
+---
+
+### Cost Notes (Session 2)
+
+| Item | Notes |
+|---|---|
+| Windows VM deleted after testing | Windows Server licensing adds ~3.5x cost vs Linux VM |
+| Windows VM disk deleted separately | OS disk continues to accrue storage charges if left after VM deletion |
+| Redeploy on demand | Use PowerShell NIC pre-creation script when Windows VM is needed again |
+| Linux VM only kept running during active sessions | Deallocate immediately after each lab session |
+
+---
+
+### Updated Session Startup Commands
+
+```bash
+# Create and attach Standard Static public IP
+az network public-ip create \
+  --resource-group rg-wg-firebox \
+  --name pip-wg-firebox \
+  --sku Standard \
+  --allocation-method Static \
+  --dns-name wg-firebox-lab \
+  --location canadacentral
+
+az network nic ip-config update \
+  --resource-group rg-wg-firebox \
+  --nic-name vmwgfireboxEth0-NSG \
+  --name ipconfig1 \
+  --public-ip-address pip-wg-firebox
+
+# Start VMs
+az vm start --resource-group rg-wg-firebox --name vmwgfirebox
+az vm start --resource-group rg-wg-firebox --name vm-linux-client
+```
+
+### Updated Session Shutdown Commands
+
+```bash
+# Deallocate VMs
+az vm deallocate --resource-group rg-wg-firebox --name vmwgfirebox
+az vm deallocate --resource-group rg-wg-firebox --name vm-linux-client
+
+# Detach public IP from NIC, then delete it
+az network nic ip-config update \
+  --resource-group rg-wg-firebox \
+  --nic-name vmwgfireboxEth0-NSG \
+  --name ipconfig1 \
+  --remove publicIpAddress
+
+az network public-ip delete \
+  --resource-group rg-wg-firebox \
+  --name pip-wg-firebox
+```
+
+---
+
+### Next Steps (Updated)
+
+- [ ] Configure Mobile VPN on WatchGuard Firebox
+- [ ] Configure Site-to-Site VPN between Azure VNets
+- [ ] Explore WatchGuard subscription services — IPS, web filtering, APT Blocker, antivirus
+- [ ] Set up WatchGuard Cloud (Dimension) for centralised logging and visibility
+- [ ] Complete WatchGuard Learning Center training modules
+- [ ] Sit WatchGuard Essentials exam (WGU-Essentials)
+
+---
 *This repository was structured and documented with the assistance of Claude AI (Anthropic) as part of an agentic portfolio workflow.*
