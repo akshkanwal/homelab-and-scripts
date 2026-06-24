@@ -318,7 +318,205 @@ Fireware allows traffic through a BOVPN only if a matching policy permits it.
 
 ## Part 2: Configuration, NAT, and Dynamic IP Handling
 
-*(Coming soon — to be added in a future session)*
+### Gateway Configuration
+
+A BOVPN gateway defines the two VPN endpoints and Phase 1 settings. Configuration is symmetric — Site B mirrors Site A with local/remote roles reversed.
+
+**Gateway general settings:**
+- **Address family** — IPv4 or IPv6; all addresses in gateway and tunnel settings must use the same family
+- **Credential method** — pre-shared key or IPSec Firebox certificate
+
+**Example topology:**
+
+| | Site A | Site B |
+|-|--------|--------|
+| External IP | `203.0.113.10` | `192.0.2.20` |
+| Trusted network | `10.0.10.0/24` | `10.0.20.0/24` |
+
+**Gateway endpoint settings (Site A):**
+- Local Gateway IP / ID: `203.0.113.10`
+- Remote Gateway IP / ID: `192.0.2.20`
+
+**Dynamic remote endpoints:** if the remote device uses a dynamic IP with dynamic DNS, specify the FQDN. If not using dynamic DNS, any non-resolvable domain string can be used if the remote device is the initiator. Dynamic endpoints require IKEv1 Aggressive Mode or IKEv2 (IKEv2 recommended).
+
+**Recommended Phase 1 settings:**
+- Version: IKEv2 (establishes and rebuilds tunnels faster than IKEv1)
+- Transform: SHA2-256-AES (256-bit)
+
+**Important:** Strong Phase 1 encryption does **not** affect BOVPN file transfer speed — Phase 1 encryption only protects the control channel, not the data path. There is no performance justification for weakening Phase 1.
+
+**Phase 1 Settings tab includes:**
+- IKE version
+- NAT Traversal (keep-alive interval default: 20 seconds)
+- Dead Peer Detection / RFC 3706 (type: Traffic-Based; idle timeout default: 20 seconds; max retries default: 5)
+- Transform settings list — ordered by preference, high to low (e.g., SHA2-256-AES (256-bit), DH Group 14)
+
+---
+
+### Tunnel Configuration
+
+After adding a gateway, configure one or more BOVPN tunnels against it.
+
+**Tunnel settings:**
+- **Gateway** — an already-configured BOVPN gateway on this Firebox
+- **Tunnel Routes** — local and remote IP addresses (must match the gateway's address family)
+- **Phase 2** — PFS, DH group, and IPSec proposals
+
+Default Phase 2 values: PFS enabled, DH Group 14, proposal ESP-AES256-SHA256.
+
+**Site A example tunnel route:** Local `10.0.10.0/24`, Remote `10.0.20.0/24`  
+**Site B example tunnel route:** Local `10.0.20.0/24`, Remote `10.0.10.0/24`
+
+The **"Add this tunnel to the BOVPN-Allow policies"** checkbox controls whether the Firebox auto-creates two Any policies for this tunnel (see Part 1).
+
+**Zero Route:** All traffic (including internet-bound) can be forced through the BOVPN to the main location. Also simplifies tunnel switching in hub-and-spoke deployments.
+
+---
+
+### BOVPN Failover
+
+BOVPN failover provides redundancy between two Fireboxes. **Not supported for third-party endpoints.**
+
+**Failover triggers (two independent detection mechanisms):**
+- **Link Monitor** — detects physical or logical link failure
+- **Dead Peer Detection (DPD)** — detects inactive VPN peer
+
+Keep DPD enabled. Without DPD, the Firebox cannot detect an inactive peer and continues sending traffic into a dead tunnel.
+
+**Requirements:**
+- Local Firebox must have at least two external interfaces
+- Link Monitor targets must be configured on those external interfaces (use a target other than the default gateway)
+- On the remote Firebox, a second gateway endpoint must be added for the backup local external interface
+
+**Redundancy levels:**
+
+| Type | Description |
+|------|-------------|
+| Partial | Only one Firebox has redundant external interfaces and gateway endpoints |
+| Full | Both Fireboxes have redundant external interfaces and gateway endpoints |
+
+**Full redundancy — gateway endpoint ordering:**  
+With two external interfaces on each side, all combinations of local/remote interface pairs are configured as separate gateway endpoints (e.g., A-Ext1↔B-Ext1, A-Ext1↔B-Ext2, A-Ext2↔B-Ext1, A-Ext2↔B-Ext2). These endpoint pairs must be listed in **identical order** in the Gateway Endpoints list on both Fireboxes.
+
+---
+
+### BOVPN Virtual Interface Configuration
+
+A BOVPN VIF can be configured between two Fireboxes or between a Firebox and a compatible third-party endpoint. If one side uses a BOVPN VIF, **the remote gateway must also be configured as a BOVPN VIF**. Failover is not supported for third-party endpoints.
+
+Configuring a BOVPN VIF adds a logical (not physical) interface to the Firebox. It supports advanced routing: metric-based failover, dynamic routing, and routing of replies to Firebox-generated traffic (DNS, DHCP, Dimension, syslog, SNMP, NTP, authentication server queries) through the VPN tunnel.
+
+**Key configuration difference vs. Manual BOVPN:**
+
+| | Manual BOVPN | BOVPN VIF |
+|-|-------------|-----------|
+| Routing decision | Source/dest IP matches an explicit tunnel route | Routing table: packet goes through VIF if VIF has the lowest-distance route to the destination |
+| Static routes | Separate IPSec routing table | Appear in the Firebox's normal static routes list |
+| Route distance | Not applicable | 1–254; lower = higher priority |
+| Dynamic routing | Not supported | Supported (OSPF, BGP) |
+
+For each BOVPN VIF, static routes are configured on the **VPN Routes** tab specifying a destination and a metric (route distance).
+
+---
+
+### BOVPN VIF Use Cases
+
+#### Metric-Based Failover
+
+Routes with a lower distance have higher priority. To make a BOVPN VIF a secondary/backup path (e.g., behind an MPLS leased line), assign it a higher distance number than the primary route.
+
+When the primary route (MPLS) becomes unavailable, its route is removed from the routing table or assigned a distance higher than the VIF route. The Firebox automatically switches to the VIF route. When the primary recovers, the Firebox automatically fails back because the primary route again has a lower distance.
+
+#### Dynamic Routing (OSPF / BGP)
+
+With a BOVPN VIF, dynamic routing protocols (OSPF or BGP) can be enabled between two sites over a secure VPN. This eliminates the need to manually maintain explicit static routes between all private networks at each site.
+
+Virtual IP addresses are configured on the VPN Routes tab — these must not overlap with any other physical or BOVPN network. Dynamic routing configuration specifies these virtual IPs as peer addresses and defines which local networks each device propagates.
+
+---
+
+### BOVPN and NAT
+
+NAT can be applied to BOVPN tunnel routes when sites have overlapping or conflicting private IP address ranges.
+
+**WatchGuard recommendation:** Do **not** default to 1-to-1 NAT to resolve overlapping subnet issues. Preferred solution: re-address one site so ranges do not overlap (Secondary Networks can assist with this). 1-to-1 NAT introduces scalability and management challenges. Use 1-to-1 NAT only when you do not control the remote site and cannot change its addressing.
+
+#### 1-to-1 NAT over BOVPN
+
+Translates an entire address range to a different range, in both directions. Used to hide true subnet addresses from the remote peer, or to resolve overlapping subnets when re-addressing is not possible.
+
+**Example — both sites use `10.0.200.0/24`:**
+
+| Site | Local subnet | Remote (as seen in tunnel config) | 1:1 NAT address |
+|------|-------------|----------------------------------|-----------------|
+| Site A | `10.0.200.0/24` | `192.168.150.0/24` | `192.168.200.0/24` (rewrites Site A's subnet) |
+| Site B | `10.0.200.0/24` | `192.168.200.0/24` | `192.168.150.0/24` (rewrites Site B's subnet) |
+
+Direction: Bi-directional on both sides.
+
+The Firebox rewrites only the octets covered by the subnet mask — for a `/24`, only the first three octets are rewritten; the host portion (last octet) is preserved. Example: `10.0.200.7` at Site B is rewritten to `192.168.150.7` before entering the tunnel.
+
+#### Dynamic NAT (DNAT) over BOVPN
+
+Masquerades an entire local subnet as a single host IP address. Only works on **uni-directional** tunnels.
+
+**Typical use case:** connecting to a remote network you do not control, where the remote admin requires your traffic to appear as a single IP (e.g., they restrict multiple private subnets, or need single-IP usage tracking).
+
+**Example:** local network `10.0.1.0/24`, remote network `10.0.200.0/24`, masquerade local as `5.5.5.5`.  
+Tunnel route config: Local `10.0.1.0/24`, Remote `10.0.200.0/24`, Direction: Local to Remote, DNAT: `5.5.5.5`.
+
+---
+
+### BOVPN with Dynamic Public IP Addresses
+
+When one or both BOVPN gateway endpoints have dynamic public IPs, the IP may change and break the tunnel. The static-IP side cannot proactively reconnect — the **dynamic-IP side must initiate the tunnel**.
+
+**Two methods for identifying a dynamic endpoint:**
+
+#### FQDN with Dynamic DNS
+If the dynamic-IP site uses a dynamic DNS service, configure the FQDN as the remote gateway ID on the static side. The dynamic DNS service keeps the domain's IP record current.  
+Config: Gateway ID type = Domain Name, value = `test.example.com`, "Attempt to Resolve" = checked.
+
+#### Text String (no dynamic DNS)
+If no dynamic DNS is available, use an arbitrary text string as the gateway ID. The string must be **identical** on both sides, and must not be a resolvable domain name.  
+Config: Gateway ID type = By Domain Information, value = `testID`, "Attempt to Resolve" = **unchecked**.
+
+The static-IP side specifies the dynamic side's current known IP as the remote gateway address. The dynamic-IP site must initiate all tunnel connections.
+
+---
+
+## Part 2 Exam Fact Dump
+
+- Phase 1 encryption strength does **not** affect BOVPN file transfer speed — only Phase 2 settings impact throughput; no performance justification for weakening Phase 1
+- Default Phase 1 transform example: SHA2-256-AES (256-bit); default Phase 2 proposal: ESP-AES256-SHA256, PFS enabled, DH Group 14
+- Site B config must exactly mirror Site A with local/remote gateway IPs and tunnel addresses reversed
+- BOVPN failover requires: 2+ external interfaces, Link Monitor on those interfaces, and a second gateway endpoint on the remote Firebox for the backup interface
+- Keep DPD enabled — without it, the Firebox cannot detect an inactive peer and continues sending traffic into a dead tunnel
+- Failover uses two distinct mechanisms: **Link Monitor** (link failure) and **DPD** (peer failure)
+- Partial redundancy = one side has backup; full redundancy = both sides have backup
+- Full redundancy: gateway endpoint pairs must be listed in the **identical order** on both Fireboxes
+- BOVPN failover is **not** supported for third-party endpoints
+- Manual BOVPN uses a separate IPSec routing table; BOVPN VIF static routes appear in the Firebox's normal static routes list
+- VIF routing decision = route distance in the routing table (not explicit tunnel-route address matching); lower distance = higher priority
+- VIF supports metric-based failover and dynamic routing (OSPF/BGP); Manual BOVPN supports neither
+- If one side uses BOVPN VIF, the remote gateway must also be configured as a BOVPN VIF
+- VIF virtual IP addresses (for dynamic routing) must not overlap with any physical or BOVPN network
+- WatchGuard does **not** recommend 1-to-1 NAT as the default fix for overlapping subnets — re-addressing is preferred; NAT introduces scalability/management challenges
+- 1-to-1 NAT over BOVPN is bidirectional; only rewrites octets covered by the subnet mask (e.g., /24 = first three octets, host portion unchanged)
+- DNAT over BOVPN is uni-directional only; masquerades an entire subnet as a single host IP
+- DNAT typical use case: connecting to a remote network you don't control where the admin requires single-IP visibility
+- For dynamic public IPs: use FQDN + dynamic DNS if available; use a matching arbitrary text string (with "Attempt to Resolve" unchecked) if dynamic DNS is not available
+- The dynamic-IP site must initiate the tunnel — the static-IP side cannot proactively reach a moving target
+
+---
+
+## Part 2 Check Yourself
+
+1. Why doesn't strengthening Phase 1 encryption hurt BOVPN performance, while strengthening Phase 2 settings does?
+2. A full-redundancy BOVPN failover setup is correctly configured on Site A but the Gateway Endpoints list is in a different order on Site B. What happens, and why?
+3. What is the core mechanical difference in how a Manual BOVPN and a BOVPN Virtual Interface each decide whether a packet should be sent through the tunnel?
+4. Two sites both use `10.0.200.0/24` internally and need a BOVPN, but you don't control the remote site. What is the recommended fix, and what is the fallback if re-addressing is not possible?
+5. Site B has a dynamic public IP and no dynamic DNS service. What two configuration requirements must be met for the tunnel to work reliably, and which side must initiate the connection?
 
 ---
 
