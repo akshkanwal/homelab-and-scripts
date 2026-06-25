@@ -522,7 +522,193 @@ The static-IP side specifies the dynamic side's current known IP as the remote g
 
 ## Part 3: Topologies and Troubleshooting
 
-*(Coming soon — to be added in a future session)*
+### BOVPN Topologies
+
+#### Centralized (Hub and Spoke)
+All VPN tunnels converge at one site (the hub); all other sites are spokes. The hub receives all traffic transferred between sites. If the hub receives traffic not intended for its own resources, it redirects it to the correct spoke tunnel — this is called **tunnel switching**.
+
+#### Decentralized (Full Mesh)
+All sites communicate directly with each other. No hub device required; each site has a direct tunnel to every other site.
+
+#### Hybrid (Partial Mesh)
+Some sites are meshed directly with each other; other sites connect to a central hub. Typical pattern: primary sites (HQ, main offices, distribution centres) form a mesh, while smaller/secondary sites connect hub-and-spoke into that primary cluster.
+
+#### Mobile VPN over BOVPN
+A mobile VPN user's traffic travels through the mobile VPN tunnel to Site A, then through a BOVPN tunnel from Site A to Site B.
+
+Requirements for this topology:
+- BOVPN tunnel routes must include routes from the **mobile VPN virtual IP pool subnet** to the destination site's networks
+- For split-tunnel mobile VPN configurations, mobile VPN tunnel routes must also be added for the destination site networks
+
+---
+
+### Troubleshooting BOVPN Tunnels
+
+#### Verifying a New Tunnel
+
+The Firebox only negotiates a VPN tunnel when traffic needs to use it — tunnels are not pre-built at configuration time.
+
+**To test a new tunnel:**
+1. Send traffic from a host behind one Firebox to an IP address behind the remote Firebox (source and destination must be permitted by the tunnel route)
+2. Monitor tunnel status in Firebox System Manager: Front Panel tab → expand Branch Office VPN Tunnels
+
+**Ping behaviour:**
+- A ping fails if the tunnel is down, the source/destination is outside the tunnel route, or the remote device is offline
+- If the remote device is offline but the ping target is within the tunnel route, **the ping still brings the tunnel up** — tunnel establishment and destination responsiveness are independent outcomes
+
+---
+
+### 5-Step Troubleshooting Order
+
+1. Verify that VPN settings match on both endpoints (pre-shared keys, Phase 1 and Phase 2 settings)
+2. Verify tunnel route IP addresses and subnet masks on both devices — local addresses must be local hosts/networks; remote addresses must be hosts/networks on the remote side; tunnel routes on both devices should look like mirror images of each other
+3. View VPN diagnostic messages
+4. Run the VPN Diagnostic Report
+5. Review IKE log messages during tunnel negotiation
+
+**Connectivity test:** if the tunnel times out completely, ping the remote Firebox's external interface to confirm basic reachability. The remote Firebox must be configured to respond to pings — edit the ping policy to allow `Any-External` if needed.
+
+---
+
+### Initiator and Responder
+
+In every VPN negotiation, one endpoint is the **initiator** (sends proposals) and the other is the **responder** (accepts or rejects based on local config).
+
+- Check diagnostics on the **responder** first — responder logs contain detail about which proposed setting was rejected
+- The responder does **not** tell the initiator which setting was expected (prevents configuration probing) — the mismatch detail appears only on the responder
+- For **IKEv2**, also check diagnostics on the initiator — IKEv2 has improved logging compared to IKEv1
+- To restart negotiations: send traffic through the tunnel (recommended), or rekey the tunnel (temporary, may not work reliably with third-party devices)
+- After restarting, check the **other endpoint's** error messages to identify why negotiation failed
+
+---
+
+### VPN Diagnostic Messages
+
+When a BOVPN tunnel cannot be established, a VPN diagnostic message is shown in WatchGuard System Manager, Firebox System Manager, and Fireware Web UI.
+
+- Messages for a tunnel include the tunnel name and describe the problem
+- Messages related to a gateway refer to endpoints by number (Endpoint 1, Endpoint 2, etc.) — necessary for failover scenarios
+- Seeing timeout messages for **inactive backup endpoints** is **normal** — only one endpoint pair is active at a time
+
+**Two message types:**
+| Type | Meaning |
+|------|---------|
+| Error | VPN failed due to a configuration or connection issue |
+| Warning | VPN is down due to an abnormal condition (e.g., DPD failure) |
+
+**Example — mismatched Phase 2 proposal:**
+
+| Side | Message |
+|------|---------|
+| Initiator | "Received 'No Proposal Chosen' message. Check VPN IKE diagnostic log messages on the remote gateway endpoint for more information." |
+| Responder | "Received ESP encryption 3DES, expecting AES" |
+
+The responder's message identifies the exact mismatch; the initiator's message only indicates rejection.
+
+---
+
+### VPN Diagnostic Report
+
+Available in Firebox System Manager and Fireware Web UI. Temporarily raises the VPN IKE log level to Information for its duration — no manual log level change needed beforehand.
+
+**To run:** in FSM, Front Panel tab → right-click the gateway name → select VPN Diagnostic Report. Start the report while a device on the remote end is sending traffic so tunnel negotiation occurs during the capture window.
+
+- Default duration: **20 seconds**
+- Maximum duration: **60 seconds**
+- May require several attempts to capture a failed negotiation
+
+**Report sections:**
+
+| Section | Contents |
+|---------|---------|
+| Conclusion | Summary of observations and VPN diagnostic errors; may include suggested next steps |
+| Gateway Summary | Configuration of the gateway and each configured gateway endpoint |
+| Tunnel Summary | Configuration of all tunnels using the selected gateway |
+| Run-time Info (bvpn routes) | For BOVPN VIF: static and dynamic routes using the VIF, with distance for each |
+| Run-time Info (gateway IKE_SA) | Status of the Phase 1 (IKE) security association |
+| Run-time Info (tunnel IPSEC_SA) | Status of Phase 2 (IPSec) security associations for active tunnels |
+| Run-time Info (tunnel IPSec_SP) | Status of Phase 2 (IPSec) security policies for active tunnels |
+| Related Logs | Tunnel negotiation log messages captured during the report window |
+| Address Pairs in Firewalld | Address pairs and traffic direction (IN, OUT, or BOTH) |
+| Policy Checker Result | Policy checker results for policies managing each tunnel route's traffic |
+
+---
+
+### IKE Log Messages
+
+IKE log messages show what occurs during tunnel negotiations. Visible in the VPN Diagnostic Report and in Traffic Monitor.
+
+- **View on the responder** — responder messages show which specific setting was rejected; initiator only receives basic information (e.g., transform settings) without the expected value
+- Filter by gateway IP address when multiple gateways are configured
+- **`iked`** = the Fireware daemon handling IKE; log message header format: `(local_gateway_ip<->remote_gateway_ip)`
+
+**Three named failure patterns:**
+
+**Retry Timeout** — remote gateway IP was not reachable (network connectivity problem or UDP 500 not open)
+```
+iked (203.0.113.20<->203.0.113.10) Drop negotiation to peer 203.0.113.10:500 due to phase 1 retry timeout
+```
+
+**Mismatched ID Settings** — problem with the Phase 1 identifier in the gateway endpoint settings
+```
+iked (203.0.113.20<->203.0.113.10) WARNING: Mismatched ID settings at peer 203.0.113.10:500 caused an authentication failure
+```
+
+**No Proposal Chosen** — Phase 1 or Phase 2 settings mismatch; receiving device rejected the proposal
+
+Initiator log:
+```
+iked (203.0.113.20<->203.0.113.10) Received No Proposal Chosen message from 203.0.113.10:500 for To_Device_A gateway
+```
+
+Responder log (sending the rejection):
+```
+iked (203.0.113.10<->203.0.113.20) Sending NO_PROPOSAL_CHOSEN message to 203.0.113.20:500
+```
+
+Responder log (revealing the mismatch):
+```
+iked (203.0.113.10<->203.0.113.20) Peer proposes phase one encryption 3DES, expecting AES
+iked (203.0.113.10<->203.0.113.20) Peer proposes phase 2 ESP authentication MD5-HMAC, expecting SHA1-HMAC
+```
+
+**Recommended log level:** keep the default **Error** level. Raising the log level increases Firebox load and causes faster consumption of log database space, which can result in loss of historical log data.
+
+---
+
+## Part 3 Exam Fact Dump
+
+- Four BOVPN topologies: Centralized (Hub and Spoke), Decentralized (Full Mesh), Hybrid (Partial Mesh), Mobile VPN over BOVPN
+- Hub-and-spoke: hub receives all inter-spoke traffic and redirects it to the correct tunnel = **tunnel switching**
+- Mobile VPN over BOVPN requires BOVPN tunnel routes from the mobile VPN virtual IP pool subnet to the destination networks; split-tunnel mobile configs also need mobile VPN tunnel routes for those networks
+- The Firebox only negotiates a VPN tunnel when traffic actually needs to use it — not at configuration time
+- A failed ping to an offline remote device still brings the tunnel up — tunnel establishment and destination responsiveness are independent
+- 5-step troubleshooting order: verify settings match → verify tunnel route IPs/masks → view VPN diagnostic messages → run VPN Diagnostic Report → review IKE logs during negotiation
+- Tunnel routes on both devices should look like mirror images when compared side by side
+- Pinging a remote Firebox external interface requires the Any-External alias to be allowed in that device's ping policy
+- Initiator proposes; responder accepts or rejects based on local config
+- Responder does **not** reveal expected values to the initiator on mismatch — prevents configuration probing; mismatch detail only appears in responder's logs/diagnostics
+- For IKEv2: check diagnostics on **both** initiator and responder
+- To restart negotiations: send traffic (recommended) or rekey (temporary, may fail with third-party devices); check the other endpoint's messages after restarting
+- Gateway endpoints labelled Endpoint 1, Endpoint 2, etc. in diagnostics to support failover identification
+- Timeout messages for inactive backup endpoints are **normal** — only one endpoint pair is active at a time
+- VPN diagnostic message types: **Error** (config/connection failure) or **Warning** (abnormal condition, e.g., DPD failure)
+- VPN Diagnostic Report temporarily raises IKE log level to Information only during its run — no manual reconfiguration needed
+- Default report duration: 20 seconds; max: 60 seconds; may require multiple attempts to capture failed negotiation
+- Report sections in order: Conclusion, Gateway Summary, Tunnel Summary, then 7 run-time/results sections
+- `iked` = Fireware IKE daemon; log header format: `(local_ip<->remote_ip)`
+- Three failure patterns: **Retry Timeout** (unreachable peer / UDP 500 blocked), **Mismatched ID Settings** (Phase 1 identifier problem), **No Proposal Chosen** (Phase 1 or 2 settings mismatch — responder's adjacent log messages show exactly which setting didn't match)
+- Recommended log level: **Error** — raising it permanently increases Firebox load and risks historical log loss
+
+---
+
+## Part 3 Check Yourself
+
+1. A BOVPN tunnel was just configured but shows no activity in Firebox System Manager. Is this necessarily a problem, and what should you do first to find out?
+2. Two Fireboxes have mismatched Phase 2 encryption settings. Why does the initiator's diagnostic message tell you almost nothing useful, while the responder's identifies the exact mismatch?
+3. A gateway configured for failover shows a timeout error on Endpoint 2 while Endpoint 1 is active and passing traffic. Does this require investigation or remediation?
+4. Why does running the VPN Diagnostic Report not require manually changing the Firebox's logging configuration beforehand?
+5. Why does WatchGuard recommend keeping the default log level at Error rather than raising it permanently for better VPN visibility?
 
 ---
 *This repository was structured and documented with the assistance of Claude AI (Anthropic) as part of an agentic portfolio workflow.*
