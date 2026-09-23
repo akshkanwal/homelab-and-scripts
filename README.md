@@ -12,6 +12,7 @@ Scripts and lab notes are committed directly via Git as they are completed. Each
 | [powershell/](./powershell/) | PowerShell scripts for automation and administration |
 | [active-directory/](./active-directory/) | AD lab configurations, GPO experiments, identity work |
 | [networking-labs/](./networking-labs/) | WatchGuard, SonicWall, VLAN, and network configuration labs |
+| [windows-server-labs/](./windows-server-labs/) | Windows Server study notes and Azure hybrid lab builds (AZ-802) |
 
 ## Current Focus
 
