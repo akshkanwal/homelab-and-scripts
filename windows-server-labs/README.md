@@ -8,7 +8,7 @@ Hands-on Windows Server and hybrid administration study notes and Azure lab buil
 |---|---|---|
 | Ch 1 | [AD DS Foundations](./study-notes/chapter-01-ad-ds-foundations.md) | ✅ Complete |
 | Ch 2 | [Sites, Replication, Trusts](./study-notes/chapter-02-sites-replication-trusts.md) | ✅ Complete |
-| Ch 3 | AD DS Sites and Replication | 🔲 Planned |
+| Ch 3 | [Users, Groups, Service Accounts](./study-notes/chapter-03-users-groups-service-accounts.md) | ✅ Complete |
 | Ch 4 | Group Policy Objects | 🔲 Planned |
 | Ch 5 | DNS in Windows Server | 🔲 Planned |
 | Ch 6 | DHCP and IP Addressing | 🔲 Planned |
