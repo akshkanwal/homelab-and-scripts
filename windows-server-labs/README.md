@@ -10,7 +10,7 @@ Hands-on Windows Server and hybrid administration study notes and Azure lab buil
 | Ch 2 | [Sites, Replication, Trusts](./study-notes/chapter-02-sites-replication-trusts.md) | ✅ Complete |
 | Ch 3 | [Users, Groups, Service Accounts](./study-notes/chapter-03-users-groups-service-accounts.md) | ✅ Complete |
 | Ch 4 | [Group Policy](./study-notes/chapter-04-group-policy.md) | ✅ Complete |
-| Ch 5 | DNS in Windows Server | 🔲 Planned |
+| Ch 5 | [DNS and DHCP](./study-notes/chapter-05-dns-dhcp.md) | ✅ Complete |
 | Ch 6 | DHCP and IP Addressing | 🔲 Planned |
 | Ch 7 | Storage and File Services | 🔲 Planned |
 | Ch 8 | Hyper-V and Virtualization | 🔲 Planned |
