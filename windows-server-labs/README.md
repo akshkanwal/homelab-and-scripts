@@ -11,7 +11,7 @@ Hands-on Windows Server and hybrid administration study notes and Azure lab buil
 | Ch 3 | [Users, Groups, Service Accounts](./study-notes/chapter-03-users-groups-service-accounts.md) | ✅ Complete |
 | Ch 4 | [Group Policy](./study-notes/chapter-04-group-policy.md) | ✅ Complete |
 | Ch 5 | [DNS and DHCP](./study-notes/chapter-05-dns-dhcp.md) | ✅ Complete |
-| Ch 6 | Hardening AD and Servers | 🔲 Planned |
+| Ch 6 | [Hardening AD and Servers](./study-notes/chapter-06-hardening-ad-servers.md) | ✅ Complete |
 | Ch 7 | Remote Management | 🔲 Planned |
 | Ch 8 | Hyper-V | 🔲 Planned |
 | Ch 9 | File Services and Storage | 🔲 Planned |
