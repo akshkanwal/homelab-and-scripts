@@ -11,13 +11,13 @@ Hands-on Windows Server and hybrid administration study notes and Azure lab buil
 | Ch 3 | [Users, Groups, Service Accounts](./study-notes/chapter-03-users-groups-service-accounts.md) | ✅ Complete |
 | Ch 4 | [Group Policy](./study-notes/chapter-04-group-policy.md) | ✅ Complete |
 | Ch 5 | [DNS and DHCP](./study-notes/chapter-05-dns-dhcp.md) | ✅ Complete |
-| Ch 6 | DHCP and IP Addressing | 🔲 Planned |
-| Ch 7 | Storage and File Services | 🔲 Planned |
-| Ch 8 | Hyper-V and Virtualization | 🔲 Planned |
-| Ch 9 | Windows Server Update Services (WSUS) | 🔲 Planned |
-| Ch 10 | Monitoring and Performance | 🔲 Planned |
-| Ch 11 | Backup and Disaster Recovery | 🔲 Planned |
-| Ch 12 | Hybrid Identity with Azure AD / Entra ID | 🔲 Planned |
+| Ch 6 | Hardening AD and Servers | 🔲 Planned |
+| Ch 7 | Remote Management | 🔲 Planned |
+| Ch 8 | Hyper-V | 🔲 Planned |
+| Ch 9 | File Services and Storage | 🔲 Planned |
+| Ch 10 | Azure Files and File Sync | 🔲 Planned |
+| Ch 11 | Azure Arc, Update Manager, Automation | 🔲 Planned |
+| Ch 12 | Monitoring and Troubleshooting | 🔲 Planned |
 
 ---
 *This repository was structured and documented with the assistance of Claude AI (Anthropic) as part of an agentic portfolio workflow.*
